@@ -4,7 +4,7 @@
 #include <stdint.h>
 #include <assert.h>
 
-/* Sanity/safety limit: no gifs larger than 10 megapixels */
+/* Sanity/safety limit: no gifs larger than 10 megapixels per frame */
 #define MAX_FRAME_SIZE 10000000
 
 struct GifSplitHandle_t {
@@ -269,8 +269,9 @@ GifSplitImage *GifSplitterReadFrame(GifSplitHandle *handle)
             transparency if any. */
             merge = false;
             /* On top of that, if the next disposal is previous, change it to
-             * background. This avoids work below and a potential switch to
-             * truecolor. */
+             * background (which is equivalent since the previous image is
+             * fully transparent). This avoids work below and a potential switch
+             * to truecolor. */
             if (disposal == GIF_DISPOSAL_PREVIOUS)
                 disposal = GIF_DISPOSAL_BACKGROUND;
         }
