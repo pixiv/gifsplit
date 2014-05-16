@@ -180,6 +180,7 @@ int main(int argc, char **argv)
         printf("loops=%d\n", info->LoopCount);
 
     GifSplitterClose(handle);
+    free(row_pointers);
     free(output_filename);
     return 0;
 }
