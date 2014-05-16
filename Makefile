@@ -11,3 +11,7 @@ gifsplit: gifsplit.o libgifsplit.o
 
 clean:
 	-rm -f gifsplit *.o
+
+test: gifsplit
+	./test.sh
+
