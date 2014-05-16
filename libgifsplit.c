@@ -173,7 +173,9 @@ void GifSplitterClose(GifSplitHandle *handle)
 {
     FreeImage(handle->Canvas);
     FreeImage(handle->PrevCanvas);
+    free(handle->ReadBuf);
     DGifCloseFile(handle->File);
+    free(handle);
 }
 
 GifSplitInfo *GifSplitterGetInfo(GifSplitHandle *handle)
