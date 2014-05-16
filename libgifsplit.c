@@ -117,6 +117,7 @@ static bool ToTruecolor(GifSplitImage *image)
         *dst++ = color.Green;
         *dst++ = color.Blue;
         *dst++ = (*src == image->TransparentColorIndex) ? 0 : 255;
+        src++;
     }
     image->IsTruecolor = true;
     free(image->RasterData);
@@ -406,6 +407,7 @@ GifSplitImage *GifSplitterReadFrame(GifSplitHandle *handle)
                         q++;
                         p++;
                     }
+                    q += handle->Canvas->Width - gif_img->Width;
                 }
             }
         }
@@ -427,6 +429,7 @@ GifSplitImage *GifSplitterReadFrame(GifSplitHandle *handle)
                     }
                     p++;
                 }
+                q += (handle->Canvas->Width - gif_img->Width) * 4;
             }
         }
     }
