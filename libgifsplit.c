@@ -121,6 +121,7 @@ static bool ToTruecolor(GifSplitImage *image)
     image->IsTruecolor = true;
     free(image->RasterData);
     image->RasterData = new_data;
+    image->TransparentColorIndex = -1;
     return true;
 }
 
@@ -349,6 +350,7 @@ GifSplitImage *GifSplitterReadFrame(GifSplitHandle *handle)
                    gif_img->Width * gif_img->Height);
             if (!ReplaceColorMap(handle->Canvas, gif_map))
                 goto fail;
+            handle->Canvas->TransparentColorIndex = transparent_color_index;
         } else {
             if (transparent_color_index == -1) {
                 /* Evil! Need transparent padding but no transparent color.
@@ -375,6 +377,7 @@ GifSplitImage *GifSplitterReadFrame(GifSplitHandle *handle)
                 }
                 if (!ReplaceColorMap(handle->Canvas, gif_map))
                     goto fail;
+                handle->Canvas->TransparentColorIndex = transparent_color_index;
             }
         }
     }
@@ -385,7 +388,9 @@ GifSplitImage *GifSplitterReadFrame(GifSplitHandle *handle)
             ColorMapObject *canvas_map = handle->Canvas->ColorMap;
             if (canvas_map->ColorCount != gif_map->ColorCount
                 || memcmp(canvas_map->Colors, gif_map->Colors,
-                          sizeof(GifColorType) * gif_map->ColorCount)) {
+                          sizeof(GifColorType) * gif_map->ColorCount)
+                || (handle->Canvas->TransparentColorIndex
+                    != transparent_color_index)) {
                 /* Colormaps differ. We could attempt to merge them if
                 possible, but for now, let's just punt to truecolor mode. */
                 if (!ToTruecolor(handle->Canvas))
