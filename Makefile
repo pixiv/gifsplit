@@ -20,6 +20,3 @@ install: all
 dist:
 	git archive --format=tar.gz --prefix=$(PACKAGE)-$(VERSION)/ HEAD > $(PACKAGE)-$(VERSION).tar.gz
 
-test: gifsplit
-	./test.sh
-
