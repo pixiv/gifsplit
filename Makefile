@@ -1,5 +1,7 @@
 CFLAGS ?= -O2 -pipe -march=native
-
+PREFIX ?= /usr/local
+PACKAGE = gifsplit
+VERSION = 0.1
 
 all: gifsplit
 
@@ -11,6 +13,12 @@ gifsplit: gifsplit.o libgifsplit.o
 
 clean:
 	-rm -f gifsplit *.o
+
+install: all
+	install gifsplit $(PREFIX)/bin/gifsplit
+
+dist:
+	git archive --format=tar.gz --prefix=$(PACKAGE)-$(VERSION)/ HEAD > $(PACKAGE)-$(VERSION).tar.gz
 
 test: gifsplit
 	./test.sh

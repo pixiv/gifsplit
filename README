@@ -1,0 +1,47 @@
+== Introduction ==
+
+gifsplit takes an animated GIF and extracts its frames as PNG images. Its
+distinguishing feature over other tools like ImageMagick and gifsicle is that
+it does not load the original GIF entirely into memory, but instead writes out
+the frames progressively.
+
+gifsplit resolves any partial frames and outputs only complete frames. It
+(hopefully) correcty handles the various GIF frame disposal methods and should
+produce output equivalent to what a web browser would produce. Metadata such as
+the duration of each frame (in centiseconds) and the number of times the entire
+animation should loop are output on standard out.
+
+== Dependencies ==
+
+libpng-dev and libgif-dev.
+
+== Installation ==
+
+$ make
+$ sudo make install
+
+== Usage ==
+
+$ gifsplit [-v] input.gif output_base
+
+== Why output PNGs and not GIFs? ==
+
+Because displayed GIF frames can have more than 256 colors[1].
+
+Although individual GIF frames as stored cannot have more than 256 colors, they
+can be displayed on top of the previous frames. When combined, multiple partial
+frames affecting different sections of the canvas might result in a merged frame
+that has more than 256 colors.
+
+Currently, gifsplit is quite naive and does not know how to merge colormaps at
+all, even if they could be losslessly merged. Therefore, it will only output
+256-color PNGs when the GIF only has a single global colormap, or when every
+frame completely covers the image and does not retain any information from the
+underlying frame (the frames may still have transparent pixels, but must use
+background disposal if they do, to ensure that nothing "shows through" from
+previous frames). Otherwise, gifsplit will switch to truecolor mode and start
+outputting truecolor PNGs instead (it will switch back to 256-color mode if it
+encounters a full-coverage frame again).
+
+[1] http://phil.ipal.org/tc.html
+
