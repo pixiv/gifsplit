@@ -1,0 +1,38 @@
+These test images come from the following sources:
+
+
+From the ImageMagick anim_basics page
+http://www.imagemagick.org/Usage/anim_basics/
+
+ animation.gif
+ anim_bgnd.gif
+ anim_none.gif
+ anim_rebuilt.gif
+ bunny_anim.gif
+ bunny_bgnd.gif
+ bunny_on_grass2.gif
+ bunny_on_grass.gif
+ canvas_bgnd.gif
+ canvas_none.gif
+ canvas_prev_anim.gif
+ canvas_prev.gif
+ deconstruct_erase.gif
+ deconstruct.gif
+ dl_world_anim.gif
+ rose_sparkle.gif
+ script_k.gif
+ smoke_skull_anim.gif
+
+
+By Philip D Howard
+http://phil.ipal.org/tc.html
+
+ tc217.gif
+
+
+By Hector Martin <marcan@pixiv.com>
+(Licensed under the zlib license):
+
+ turtle.gif
+
+
