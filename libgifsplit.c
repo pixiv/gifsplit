@@ -251,11 +251,28 @@ GifSplitImage *GifSplitterReadFrame(GifSplitHandle *handle)
         && gif_img->Height == handle->File->SHeight)
         is_full = true;
 
+    int frame_width = gif_img->Width;
+    int frame_height = gif_img->Height;
+
+    bool over_size = false;
+
     /* Sanity check */
     if (gif_img->Top < 0 || gif_img->Left < 0
         || gif_img->Width < 0 || gif_img->Height < 0
-        || (gif_img->Left + gif_img->Width) > handle->File->SWidth
-        || (gif_img->Top + gif_img->Height) > handle->File->SHeight)
+        || gif_img->Top >= handle->File->SHeight
+        || gif_img->Left >= handle->File->SWidth)
+        goto fail;
+
+    if ((gif_img->Left + gif_img->Width) > handle->File->SWidth) {
+        frame_width = handle->File->SWidth - gif_img->Left;
+        over_size = true;
+    }
+    if ((gif_img->Top + gif_img->Height) > handle->File->SHeight) {
+        frame_height = handle->File->SHeight - gif_img->Top;
+        over_size = true;
+    }
+
+    if (over_size && (gif_img->Width * gif_img->Height) > MAX_FRAME_SIZE)
         goto fail;
 
     /* Need to merge if the image is not the whole canvas, or it has
@@ -313,6 +330,12 @@ GifSplitImage *GifSplitterReadFrame(GifSplitHandle *handle)
 
     GifPixelType *p = handle->ReadBuf;
 
+    if (over_size) {
+        p = malloc(gif_img->Width * gif_img->Height);
+        fprintf(stderr, "Warn: oversize GIF frame (%dx%d+%d+%d)\n",
+                gif_img->Width, gif_img->Height, gif_img->Left, gif_img->Top);
+    }
+
     /* Deinterlace image, if necessary */
     if (gif_img->Interlace) {
         for (int i = 0; i < 4; i++) {
@@ -329,6 +352,19 @@ GifSplitImage *GifSplitterReadFrame(GifSplitHandle *handle)
                             gif_img->Width) == GIF_ERROR)
                 goto fail;
         }
+    }
+
+    if (over_size) {
+        GifPixelType *buf = p;
+        GifPixelType *q = p;
+        p = handle->ReadBuf;
+        for (int y = 0; y < frame_height; y++) {
+            memcpy(p, q, frame_width);
+            q += gif_img->Width;
+            p += frame_width;
+        }
+        p = handle->ReadBuf;
+        free(buf);
     }
 
     ColorMapObject *gif_map = gif_img->ColorMap;
@@ -348,7 +384,7 @@ GifSplitImage *GifSplitterReadFrame(GifSplitHandle *handle)
             /* Easy, just copy everything */
             handle->Canvas->IsTruecolor = false;
             memcpy(handle->Canvas->RasterData, p,
-                   gif_img->Width * gif_img->Height);
+                   frame_width * frame_height);
             if (!ReplaceColorMap(handle->Canvas, gif_map))
                 goto fail;
             handle->Canvas->TransparentColorIndex = transparent_color_index;
@@ -371,10 +407,10 @@ GifSplitImage *GifSplitterReadFrame(GifSplitHandle *handle)
                        GetImageSize(handle->Canvas));
                 GifPixelType *q = (handle->Canvas->RasterData + gif_img->Left
                                    + gif_img->Top * handle->Canvas->Width);
-                for (int y = 0; y < gif_img->Height; y++) {
-                    memcpy(q, p, gif_img->Width);
+                for (int y = 0; y < frame_height; y++) {
+                    memcpy(q, p, frame_width);
                     q += handle->Canvas->Width;
-                    p += gif_img->Width;
+                    p += frame_width;
                 }
                 if (!ReplaceColorMap(handle->Canvas, gif_map))
                     goto fail;
@@ -400,22 +436,22 @@ GifSplitImage *GifSplitterReadFrame(GifSplitHandle *handle)
                 /* Same colormaps, so we can just merge */
                 GifPixelType *q = (handle->Canvas->RasterData + gif_img->Left
                                    + gif_img->Top * handle->Canvas->Width);
-                for (int y = 0; y < gif_img->Height; y++) {
-                    for (int x = 0; x < gif_img->Width; x++) {
+                for (int y = 0; y < frame_height; y++) {
+                    for (int x = 0; x < frame_width; x++) {
                         if (*p != transparent_color_index)
                             *q = *p;
                         q++;
                         p++;
                     }
-                    q += handle->Canvas->Width - gif_img->Width;
+                    q += handle->Canvas->Width - frame_width;
                 }
             }
         }
         if (handle->Canvas->IsTruecolor) {
             GifPixelType *q = (handle->Canvas->RasterData + 4 * gif_img->Left
                                + 4 * gif_img->Top * handle->Canvas->Width);
-            for (int y = 0; y < gif_img->Height; y++) {
-                for (int x = 0; x < gif_img->Width; x++) {
+            for (int y = 0; y < frame_height; y++) {
+                for (int x = 0; x < frame_width; x++) {
                     if (*p != transparent_color_index) {
                         GifColorType color = {0,0,0};
                         if (*p < gif_map->ColorCount)
@@ -429,13 +465,15 @@ GifSplitImage *GifSplitterReadFrame(GifSplitHandle *handle)
                     }
                     p++;
                 }
-                q += (handle->Canvas->Width - gif_img->Width) * 4;
+                q += (handle->Canvas->Width - frame_width) * 4;
             }
         }
     }
 
     handle->PrevDisposal = disposal;
     handle->PrevImage = *gif_img;
+    handle->PrevImage.Height = frame_height;
+    handle->PrevImage.Width = frame_width;
     handle->PrevFull = is_full;
 
     return handle->Canvas;
