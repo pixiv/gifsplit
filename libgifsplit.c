@@ -185,7 +185,7 @@ GifSplitInfo *GifSplitterGetInfo(GifSplitHandle *handle)
     return &handle->Info;
 }
 
-GifSplitImage *GifSplitterReadFrame(GifSplitHandle *handle)
+GifSplitImage *GifSplitterReadFrame(GifSplitHandle *handle, bool forceTrueColor)
 {
     GifWord transparent_color_index = -1;
     GifWord disposal = GIF_DISPOSAL_NONE;
@@ -380,16 +380,16 @@ GifSplitImage *GifSplitterReadFrame(GifSplitHandle *handle)
     /* Now apply it to the canvas */
     if (!merge) {
         /* The easy case: no merging */
-        if (is_full) {
+        if (is_full && !forceTrueColor) {
             /* Easy, just copy everything */
             handle->Canvas->IsTruecolor = false;
             memcpy(handle->Canvas->RasterData, p,
-                   frame_width * frame_height);
+                frame_width * frame_height);
             if (!ReplaceColorMap(handle->Canvas, gif_map))
                 goto fail;
             handle->Canvas->TransparentColorIndex = transparent_color_index;
         } else {
-            if (transparent_color_index == -1) {
+            if (transparent_color_index == -1 || forceTrueColor) {
                 /* Evil! Need transparent padding but no transparent color.
                 Punt and switch to truecolor, then perform a truecolor merge. */
                 if (!handle->Canvas->IsTruecolor) {
@@ -427,7 +427,8 @@ GifSplitImage *GifSplitterReadFrame(GifSplitHandle *handle)
                 || memcmp(canvas_map->Colors, gif_map->Colors,
                           sizeof(GifColorType) * gif_map->ColorCount)
                 || (handle->Canvas->TransparentColorIndex
-                    != transparent_color_index)) {
+                    != transparent_color_index)
+                || forceTrueColor) {
                 /* Colormaps differ. We could attempt to merge them if
                 possible, but for now, let's just punt to truecolor mode. */
                 if (!ToTruecolor(handle->Canvas))

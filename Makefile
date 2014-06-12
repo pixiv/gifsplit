@@ -6,10 +6,10 @@ VERSION = 0.2
 all: gifsplit
 
 %.o: %.c
-	$(CC) -Wall -std=c99 $(CFLAGS) -c -o $@ $<
+	$(CC) -DVERSION=\"$(VERSION)\" -Wall -std=c99 $(CFLAGS) -c -o $@ $<
 
 gifsplit: gifsplit.o libgifsplit.o
-	$(CC) -Wall -std=c99 $(CFLAGS) -o $@ gifsplit.o libgifsplit.o -lgif -lpng
+	$(CC) -Wall -std=c99 $(CFLAGS) -o $@ gifsplit.o libgifsplit.o -lgif -lpng -ljpeg
 
 clean:
 	-rm -f gifsplit *.o

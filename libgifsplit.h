@@ -76,6 +76,7 @@ GifSplitInfo *GifSplitterGetInfo(GifSplitHandle *handle);
  *
  * Returns NULL if an error occured.
  */
-GifSplitImage *GifSplitterReadFrame(GifSplitHandle *handle);
+GifSplitImage *GifSplitterReadFrame(GifSplitHandle *handle,
+                                    bool forceTrueColor);
 
 #endif

@@ -1,9 +1,9 @@
 == Introduction ==
 
-gifsplit takes an animated GIF and extracts its frames as PNG images. Its
-distinguishing feature over other tools like ImageMagick and gifsicle is that
-it does not load the original GIF entirely into memory, but instead writes out
-the frames progressively.
+gifsplit takes an animated GIF and extracts its frames as PNG or JPEG images.
+Its distinguishing feature over other tools like ImageMagick and gifsicle is
+that it does not load the original GIF entirely into memory, but instead writes
+out the frames progressively.
 
 gifsplit resolves any partial frames and outputs only complete frames. It
 (hopefully) correcty handles the various GIF frame disposal methods and should
@@ -13,7 +13,7 @@ animation should loop are output on standard out.
 
 == Dependencies ==
 
-libpng-dev and libgif-dev.
+libpng-dev, libgif-dev, libjpeg-dev.
 
 == Installation ==
 
@@ -22,7 +22,10 @@ $ sudo make install
 
 == Usage ==
 
-$ gifsplit [-v] input.gif output_base
+Run 'gifsplit -h' for more information.
+
+Basic usage:
+$ gifsplit input.gif output_base
 
 == Why output PNGs and not GIFs? ==
 
@@ -42,6 +45,9 @@ background disposal if they do, to ensure that nothing "shows through" from
 previous frames). Otherwise, gifsplit will switch to truecolor mode and start
 outputting truecolor PNGs instead (it will switch back to 256-color mode if it
 encounters a full-coverage frame again).
+
+In JPEG output mode, all frames are truecolor, for obvious reasons.
+Additionally, transparent pixels are rendered as white in JPEGs.
 
 [1] http://phil.ipal.org/tc.html
 

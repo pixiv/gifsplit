@@ -4,17 +4,35 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
 #include <malloc.h>
 #include <assert.h>
 
 #include <png.h>
+#include <jpeglib.h>
 #include "libgifsplit.h"
 
 int verbose = 0;
+bool jpeg = false;
+bool optimize = false;
+int quality = 0;
+int sampling = -1;
 
 static void usage(const char *argv0)
 {
-    fprintf(stderr, "Usage: %s [-v] input.gif output_base\n", argv0);
+    fprintf(stderr, "Usage: %s [OPTIONS] input.gif output_base\n", argv0);
+    fprintf(stderr, "\nOptions:\n");
+    fprintf(stderr, "  -h             show this help\n");
+    fprintf(stderr, "  -V             display version number and exit\n");
+    fprintf(stderr, "  -v             verbose debugging output\n");
+    fprintf(stderr, "  -q QUALITY     output JPEGs instead of PNGs\n");
+    fprintf(stderr, "                 (specify the quality level, 0-100)\n");
+    fprintf(stderr, "  -s [012]       set color subsampling:\n");
+    fprintf(stderr, "                   0: 4:4:4 (no subsampling)\n");
+    fprintf(stderr, "                   1: 4:2:2 (2x1 subsampling)\n");
+    fprintf(stderr, "                   2: 4:2:0 (2x2 subsampling)\n");
+    fprintf(stderr, "                 default: 2 for q<90, else 0\n");
+    fprintf(stderr, "  -o             optimize the JPEG Huffman tables\n");
 }
 
 static void dbgprintf(const char *fmt, ...) {
@@ -28,9 +46,99 @@ static void dbgprintf(const char *fmt, ...) {
     va_end(ap);
 }
 
-static bool write_image(GifSplitImage *img, const char *filename,
-                        png_bytepp row_pointers)
+static bool write_jpeg(GifSplitImage *img, const char *filename)
 {
+    struct jpeg_compress_struct cinfo;
+    struct jpeg_error_mgr jerr;
+    int row_stride = img->Width * 3;
+
+    JSAMPROW row_pointer[1];
+    JSAMPLE *row = malloc(row_stride);
+    if (!row) {
+        fprintf(stderr, "Out of memory\n");
+        return false;
+    }
+    row_pointer[0] = row;
+
+    FILE *fp = fopen(filename, "wb");
+    if (!fp) {
+        return false;
+    }
+
+    cinfo.err = jpeg_std_error(&jerr);
+    jpeg_create_compress(&cinfo);
+    jpeg_stdio_dest(&cinfo, fp);
+
+    assert(img->IsTruecolor);
+
+    cinfo.image_width = img->Width;
+    cinfo.image_height = img->Height;
+    cinfo.input_components = 3;
+    cinfo.in_color_space = JCS_RGB;
+    jpeg_set_defaults(&cinfo);
+    jpeg_set_quality(&cinfo, quality, TRUE);
+    cinfo.optimize_coding = optimize;
+    cinfo.dct_method = JDCT_ISLOW;
+
+    /* Counter-intuitively, chroma sampling is specified relative to luma
+    sampling, so we change the luma factors only (oversampling relative to
+    chroma). */
+    cinfo.comp_info[1].v_samp_factor = 1;
+    cinfo.comp_info[1].h_samp_factor = 1;
+    cinfo.comp_info[2].v_samp_factor = 1;
+    cinfo.comp_info[2].h_samp_factor = 1;
+
+    if (sampling < 0 || sampling > 2) {
+        sampling = quality < 90 ? 2 : 0;
+    }
+
+    switch (sampling) {
+        case 1:
+            cinfo.comp_info[0].v_samp_factor = 1;
+            cinfo.comp_info[0].h_samp_factor = 2;
+            break;
+        case 2:
+            cinfo.comp_info[0].v_samp_factor = 2;
+            cinfo.comp_info[0].h_samp_factor = 2;
+            break;
+        default:
+            cinfo.comp_info[0].v_samp_factor = 1;
+            cinfo.comp_info[0].h_samp_factor = 1;
+            break;
+    }
+
+    jpeg_start_compress(&cinfo, TRUE);
+
+    uint8_t *p = img->RasterData;
+    while (cinfo.next_scanline < cinfo.image_height) {
+        int i;
+        for (i = 0; i < row_stride; i += 3) {
+            /* Convert transparent pixels to white */
+            row[i + 0] = p[3] ? p[0] : 255;
+            row[i + 1] = p[3] ? p[1] : 255;
+            row[i + 2] = p[3] ? p[2] : 255;
+            p += 4;
+        }
+        jpeg_write_scanlines(&cinfo, row_pointer, 1);
+    }
+
+    jpeg_finish_compress(&cinfo);
+    fclose(fp);
+    jpeg_destroy_compress(&cinfo);
+    free(row);
+    return true;
+}
+
+static bool write_png(GifSplitImage *img, const char *filename)
+{
+    png_bytepp row_pointers;
+
+    row_pointers = malloc(sizeof(*row_pointers) * img->Height);
+    if (!row_pointers) {
+        fprintf(stderr, "Out of memory\n");
+        return false;
+    }
+
     FILE *fp = fopen(filename, "wb");
     if (!fp) {
         return false;
@@ -95,16 +203,30 @@ static bool write_image(GifSplitImage *img, const char *filename,
 
     png_destroy_write_struct(&png_ptr, &info_ptr);
     fclose(fp);
+    free(row_pointers);
     return true;
 }
 
 int main(int argc, char **argv)
 {
     int opt;
-    while ((opt = getopt(argc, argv, "v")) != -1) {
+    while ((opt = getopt(argc, argv, "hvVq:s:o")) != -1) {
         switch (opt) {
         case 'v':
             verbose = 1;
+            break;
+        case 'V':
+            fprintf(stderr, "gifsplit v"VERSION"\n");
+            return 0;
+        case 'q':
+            jpeg = 1;
+            quality = atoi(optarg);
+            break;
+        case 's':
+            sampling = atoi(optarg);
+            break;
+        case 'o':
+            optimize = true;
             break;
         default: /* 'h' */
             usage(argv[0]);
@@ -150,20 +272,21 @@ int main(int argc, char **argv)
     GifSplitImage *img;
     int frame = 0;
 
-    png_bytepp row_pointers;
-    row_pointers = malloc(sizeof(*row_pointers) * gif->SHeight);
-    if (!row_pointers) {
-        fprintf(stderr, "Out of memory\n");
-        return 1;
-    }
-
-    while ((img = GifSplitterReadFrame(handle))) {
+    while ((img = GifSplitterReadFrame(handle, jpeg))) {
         dbgprintf("Read frame %d (truecolor=%d, cmap=%d)\n", frame,
                   img->IsTruecolor, img->UsedLocalColormap);
-        snprintf(output_filename, fn_len, "%s%06d.png", output_base, frame);
-        if (!write_image(img, output_filename, row_pointers)) {
-            fprintf(stderr, "Failed to write to %s\n", output_filename);
-            return 1;
+        snprintf(output_filename, fn_len, "%s%06d.%s", output_base, frame,
+                 jpeg ? "jpg" : "png");
+        if (jpeg) {
+            if (!write_jpeg(img, output_filename)) {
+                fprintf(stderr, "Failed to write to %s\n", output_filename);
+                return 1;
+            }
+        } else {
+            if (!write_png(img, output_filename)) {
+                fprintf(stderr, "Failed to write to %s\n", output_filename);
+                return 1;
+            }
         }
         printf("%d delay=%d\n", frame, img->DelayTime);
         frame++;
@@ -179,7 +302,6 @@ int main(int argc, char **argv)
         printf("loops=%d\n", info->LoopCount);
 
     GifSplitterClose(handle);
-    free(row_pointers);
     free(output_filename);
     return 0;
 }
