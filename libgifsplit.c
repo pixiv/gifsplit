@@ -192,6 +192,8 @@ GifSplitImage *GifSplitterReadFrame(GifSplitHandle *handle, bool forceTrueColor)
 
     GifRecordType record_type;
 
+    int delay_time = 10;
+
     /* Handle extension records and save their data */
     for(;;) {
         if (DGifGetRecordType(handle->File, &record_type) == GIF_ERROR)
@@ -212,7 +214,7 @@ GifSplitImage *GifSplitterReadFrame(GifSplitHandle *handle, bool forceTrueColor)
                     || disposal > GIF_DISPOSAL_PREVIOUS)
                     disposal = GIF_DISPOSAL_NONE;
 
-                handle->Canvas->DelayTime = ext_data[2] | (ext_data[3] << 8);
+                delay_time = ext_data[2] | (ext_data[3] << 8);
 
                 if (ext_data[1] & 1)
                     transparent_color_index = ext_data[4];
@@ -476,6 +478,7 @@ GifSplitImage *GifSplitterReadFrame(GifSplitHandle *handle, bool forceTrueColor)
     handle->PrevImage.Height = frame_height;
     handle->PrevImage.Width = frame_width;
     handle->PrevFull = is_full;
+    handle->Canvas->DelayTime = delay_time;
 
     return handle->Canvas;
 
