@@ -1,7 +1,7 @@
 CFLAGS ?= -O2 -pipe -march=native
 PREFIX ?= /usr/local
 PACKAGE = gifsplit
-VERSION = 0.2
+VERSION = 0.3
 
 all: gifsplit
 
