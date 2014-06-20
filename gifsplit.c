@@ -12,11 +12,15 @@
 #include <jpeglib.h>
 #include "libgifsplit.h"
 
+#define ERR_UNSPECIFIED 1
+#define ERR_MAX_FRAMES  2
+
 int verbose = 0;
 bool jpeg = false;
 bool optimize = false;
 int quality = 0;
 int sampling = -1;
+int max_frames = 0;
 
 static void usage(const char *argv0)
 {
@@ -33,6 +37,7 @@ static void usage(const char *argv0)
     fprintf(stderr, "                   2: 4:2:0 (2x2 subsampling)\n");
     fprintf(stderr, "                 default: 2 for q<90, else 0\n");
     fprintf(stderr, "  -o             optimize the JPEG Huffman tables\n");
+    fprintf(stderr, "  -m [NUMBER]    limit number of frames to output\n");
 }
 
 static void dbgprintf(const char *fmt, ...) {
@@ -210,7 +215,7 @@ static bool write_png(GifSplitImage *img, const char *filename)
 int main(int argc, char **argv)
 {
     int opt;
-    while ((opt = getopt(argc, argv, "hvVq:s:o")) != -1) {
+    while ((opt = getopt(argc, argv, "hvVq:s:om:")) != -1) {
         switch (opt) {
         case 'v':
             verbose = 1;
@@ -228,15 +233,18 @@ int main(int argc, char **argv)
         case 'o':
             optimize = true;
             break;
+        case 'm':
+            max_frames = atoi(optarg);
+            break;
         default: /* 'h' */
             usage(argv[0]);
-            return 1;
+            return ERR_UNSPECIFIED;
         }
     }
 
     if (optind != (argc - 2)) {
         fprintf(stderr, "Expected 2 arguments after options\n");
-        return 1;
+        return ERR_UNSPECIFIED;
     }
 
     const char *in_filename = argv[optind];
@@ -245,7 +253,7 @@ int main(int argc, char **argv)
     char *output_filename = malloc(fn_len + 1);
     if (!output_filename) {
         fprintf(stderr, "Out of memory\n");
-        return 1;
+        return ERR_UNSPECIFIED;
     }
     memset(output_filename, 0, fn_len + 1);
 
@@ -260,19 +268,23 @@ int main(int argc, char **argv)
 
     if (!gif) {
         fprintf(stderr, "Failed to open %s\n", in_filename);
-        return 1;
+        return ERR_UNSPECIFIED;
     }
 
     GifSplitHandle *handle = GifSplitterOpen(gif);
     if (!handle) {
         fprintf(stderr, "Failed to greate GIF splitter handle\n");
-        return 1;
+        return ERR_UNSPECIFIED;
     }
 
     GifSplitImage *img;
     int frame = 0;
 
     while ((img = GifSplitterReadFrame(handle, jpeg))) {
+        if (max_frames && frame >= max_frames) {
+            fprintf(stderr, "Max frames exceeded\n");
+            return ERR_MAX_FRAMES;
+        }
         dbgprintf("Read frame %d (truecolor=%d, cmap=%d)\n", frame,
                   img->IsTruecolor, img->UsedLocalColormap);
         snprintf(output_filename, fn_len, "%s%06d.%s", output_base, frame,
@@ -280,12 +292,12 @@ int main(int argc, char **argv)
         if (jpeg) {
             if (!write_jpeg(img, output_filename)) {
                 fprintf(stderr, "Failed to write to %s\n", output_filename);
-                return 1;
+                return ERR_UNSPECIFIED;
             }
         } else {
             if (!write_png(img, output_filename)) {
                 fprintf(stderr, "Failed to write to %s\n", output_filename);
-                return 1;
+                return ERR_UNSPECIFIED;
             }
         }
         printf("%d delay=%d\n", frame, img->DelayTime);
@@ -296,7 +308,7 @@ int main(int argc, char **argv)
     info = GifSplitterGetInfo(handle);
     if (info->HasErrors) {
         fprintf(stderr, "Error while processing input gif\n");
-        return 1;
+        return ERR_UNSPECIFIED;
     }
     if (info)
         printf("loops=%d\n", info->LoopCount);
