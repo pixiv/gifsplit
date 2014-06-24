@@ -12,8 +12,10 @@
 #include <jpeglib.h>
 #include "libgifsplit.h"
 
-#define ERR_UNSPECIFIED 1
-#define ERR_MAX_FRAMES  2
+#define ERR_UNSPECIFIED     1
+#define ERR_MAX_FRAMES      2
+#define ERR_MAX_SIZE        3
+#define ERR_MAX_FRAME_SIZE  4
 
 int verbose = 0;
 bool jpeg = false;
@@ -21,6 +23,8 @@ bool optimize = false;
 int quality = 0;
 int sampling = -1;
 int max_frames = 0;
+long max_size = 0;
+long max_frame_size = 0;
 
 static void usage(const char *argv0)
 {
@@ -37,7 +41,9 @@ static void usage(const char *argv0)
     fprintf(stderr, "                   2: 4:2:0 (2x2 subsampling)\n");
     fprintf(stderr, "                 default: 2 for q<90, else 0\n");
     fprintf(stderr, "  -o             optimize the JPEG Huffman tables\n");
-    fprintf(stderr, "  -m [NUMBER]    limit number of frames to output\n");
+    fprintf(stderr, "  -m [COUNT]     max number of frames to output\n");
+    fprintf(stderr, "  -M [BYTES]     max cumulative output size\n");
+    fprintf(stderr, "  -F [BYTES]     max frame output size\n");
 }
 
 static void dbgprintf(const char *fmt, ...) {
@@ -51,8 +57,9 @@ static void dbgprintf(const char *fmt, ...) {
     va_end(ap);
 }
 
-static bool write_jpeg(GifSplitImage *img, const char *filename)
+static long write_jpeg(GifSplitImage *img, const char *filename)
 {
+    long size;
     struct jpeg_compress_struct cinfo;
     struct jpeg_error_mgr jerr;
     int row_stride = img->Width * 3;
@@ -61,13 +68,13 @@ static bool write_jpeg(GifSplitImage *img, const char *filename)
     JSAMPLE *row = malloc(row_stride);
     if (!row) {
         fprintf(stderr, "Out of memory\n");
-        return false;
+        return -1;
     }
     row_pointer[0] = row;
 
     FILE *fp = fopen(filename, "wb");
     if (!fp) {
-        return false;
+        return -1;
     }
 
     cinfo.err = jpeg_std_error(&jerr);
@@ -128,43 +135,46 @@ static bool write_jpeg(GifSplitImage *img, const char *filename)
     }
 
     jpeg_finish_compress(&cinfo);
+    fseek(fp, 0, SEEK_END);
+    size = ftell(fp);
     fclose(fp);
     jpeg_destroy_compress(&cinfo);
     free(row);
-    return true;
+    return size;
 }
 
-static bool write_png(GifSplitImage *img, const char *filename)
+static long write_png(GifSplitImage *img, const char *filename)
 {
+    long size;
     png_bytepp row_pointers;
 
     row_pointers = malloc(sizeof(*row_pointers) * img->Height);
     if (!row_pointers) {
         fprintf(stderr, "Out of memory\n");
-        return false;
+        return -1;
     }
 
     FILE *fp = fopen(filename, "wb");
     if (!fp) {
-        return false;
+        return -1;
     }
 
     png_structp png_ptr = png_create_write_struct(PNG_LIBPNG_VER_STRING,
                                                   NULL, NULL, NULL);
     if (!png_ptr)
-        return false;
+        return -1;
 
     png_infop info_ptr = png_create_info_struct(png_ptr);
     if (!info_ptr) {
         png_destroy_write_struct(&png_ptr, NULL);
-        return false;
+        return -1;
     }
 
     if (setjmp(png_jmpbuf(png_ptr))) {
         fprintf(stderr, "libpng returned an error\n");
         png_destroy_write_struct(&png_ptr, &info_ptr);
         fclose(fp);
-        return false;
+        return -1;
     }
     png_init_io(png_ptr, fp);
 
@@ -207,15 +217,17 @@ static bool write_png(GifSplitImage *img, const char *filename)
                   img->IsTruecolor ? 0 : PNG_TRANSFORM_PACKING, NULL);
 
     png_destroy_write_struct(&png_ptr, &info_ptr);
+    fseek(fp, 0, SEEK_END);
+    size = ftell(fp);
     fclose(fp);
     free(row_pointers);
-    return true;
+    return size;
 }
 
 int main(int argc, char **argv)
 {
     int opt;
-    while ((opt = getopt(argc, argv, "hvVq:s:om:")) != -1) {
+    while ((opt = getopt(argc, argv, "hvVq:s:om:M:F:")) != -1) {
         switch (opt) {
         case 'v':
             verbose = 1;
@@ -235,6 +247,12 @@ int main(int argc, char **argv)
             break;
         case 'm':
             max_frames = atoi(optarg);
+            break;
+        case 'M':
+            max_size = atoi(optarg);
+            break;
+        case 'F':
+            max_frame_size = atoi(optarg);
             break;
         default: /* 'h' */
             usage(argv[0]);
@@ -279,8 +297,10 @@ int main(int argc, char **argv)
 
     GifSplitImage *img;
     int frame = 0;
+    long output_size = 0;
 
     while ((img = GifSplitterReadFrame(handle, jpeg))) {
+        long frame_size = 0;
         if (max_frames && frame >= max_frames) {
             fprintf(stderr, "Max frames exceeded\n");
             return ERR_MAX_FRAMES;
@@ -290,17 +310,30 @@ int main(int argc, char **argv)
         snprintf(output_filename, fn_len, "%s%06d.%s", output_base, frame,
                  jpeg ? "jpg" : "png");
         if (jpeg) {
-            if (!write_jpeg(img, output_filename)) {
+            frame_size = write_jpeg(img, output_filename);
+            if (frame_size <= 0) {
                 fprintf(stderr, "Failed to write to %s\n", output_filename);
                 return ERR_UNSPECIFIED;
             }
         } else {
-            if (!write_png(img, output_filename)) {
+            frame_size = write_png(img, output_filename);
+            if (frame_size <= 0) {
                 fprintf(stderr, "Failed to write to %s\n", output_filename);
                 return ERR_UNSPECIFIED;
             }
         }
         printf("%d delay=%d\n", frame, img->DelayTime);
+        if (max_frame_size > 0 && frame_size > max_frame_size) {
+            fprintf(stderr, "Max frame size exceeded (%ld > %ld)\n", frame_size,
+                    max_frame_size);
+            return ERR_MAX_FRAME_SIZE;
+        }
+        output_size += frame_size;
+        if (max_size > 0 && output_size > max_size) {
+            fprintf(stderr, "Max size exceeded (%ld > %ld)\n", output_size,
+                    max_size);
+            return ERR_MAX_SIZE;
+        }
         frame++;
     }
 
